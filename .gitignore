@@ -8,3 +8,5 @@ data/bin/dll/merlin.dll
 data/bin/linux
 data/bin/windows
 .idea/
+*.swp
+
