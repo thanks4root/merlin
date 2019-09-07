@@ -1,21 +1,57 @@
-FROM golang:stretch
-MAINTAINER @audibleblink
+FROM golang:buster AS builder
 
-# Build the Docker image first
-#  > sudo docker build -t merlin .
+WORKDIR /go/src/github.com/Ne0nd0g/merlin
 
-# To just generate Merlin binaries, run the following and check your `src` folder for the output
-#  > sudo docker run --rm --mount type=bind,src=/tmp,dst=/go/src/github.com/Ne0nd0g/merlin/data/temp merlin make linux
-#  > ls /tmp/v0.6.4.BETA
+COPY ./go.mod /go/src/github.com/Ne0nd0g/merlin
+COPY ./go.sum /go/src/github.com/Ne0nd0g/merlin
 
-# To start the Merlin Server, run
-#  > sudo docker run -it -p 443:443 merlin
+RUN    set -x \
+    && go mod download \
+    && echo '[+] Done'
+
+COPY . /go/src/github.com/Ne0nd0g/merlin
+
+RUN    set -x \
+    && go build -o /tmp/merlin cmd/merlinserver/main.go \
+    && echo '[+] Done'
 
 
-RUN apt-get update && apt-get install -y git make
-RUN go get github.com/Ne0nd0g/merlin/...
+FROM debian:buster-slim AS runner
 
-WORKDIR $GOPATH/src/github.com/Ne0nd0g/merlin
-VOLUME ["data/temp"]
-EXPOSE 443
-CMD ["go", "run", "cmd/merlinserver/main.go", "-i", "0.0.0.0"]
+LABEL \
+      maintainer="@audibleblink"
+
+EXPOSE 8443/tcp
+
+WORKDIR /opt/merlin
+
+COPY --from=builder /tmp/merlin /opt/merlin/merlin
+COPY ./files/entrypoint.sh /usr/local/bin/entrypoint.sh
+
+RUN    set -x \
+    && echo '[+] Install required software' \
+    && apt-get update \
+    && apt-get install \
+                       -y \
+                         gosu \
+    \
+    && echo '[+] Create user' \
+    && useradd \
+               --shell /usr/sbin/nologin \
+               --no-create-home \
+                 merlin \
+    \
+    && echo '[+] Cleanup image' \
+    && install \
+               -d \
+               -g merlin \
+               -m 3775 \
+                 /opt/merlin/data \
+    && chmod 0755 /usr/local/bin/entrypoint.sh \
+    && rm -fr /var/cache/apt/lists/* \
+    && echo '[+] Done'
+
+VOLUME /opt/merlin/data
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+
